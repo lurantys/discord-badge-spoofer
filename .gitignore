@@ -1,0 +1,21 @@
+# secrets / runtime state
+science_state.json
+vault.json
+journal.jsonl
+.env
+.env.*
+
+# python
+__pycache__/
+*.pyc
+
+# node
+node_modules/
+npm-debug.log*
+
+# data cache
+data/
+
+# os
+.DS_Store
+Thumbs.db
