@@ -3,10 +3,27 @@
 A small toolkit that inflates two Discord profile badges by replaying the same
 telemetry events the official Discord client sends to `/api/v9/science`:
 
-- **Playtime badge** — total hours played across titles.
-- **Game Variety badge** — number of distinct games played (unlocks at 5+ titles).
+- **Game Time badge** — total hours played across detected desktop games.
+- **Game Variety badge** — number of distinct detected games played.
 
 > Reference: [Discord Profile Badges — What Each Badge Means](https://support.discord.com/hc/en-us/articles/44369363856663-Discord-Profile-Badges-What-Each-Badge-Means)
+
+## Badges affected
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="assets/badges/game-time.png" alt="Game Time badge" width="420"><br>
+      <b>Game Time</b><br>
+      <sub>Total hours played across detected games.</sub>
+    </td>
+    <td align="center">
+      <img src="assets/badges/game-variety.png" alt="Game Variety badge" width="420"><br>
+      <b>Game Variety</b><br>
+      <sub>Number of different detected games played.</sub>
+    </td>
+  </tr>
+</table>
 
 This project is for educational purposes only. It violates Discord's Terms of
 Service — use at your own risk.
