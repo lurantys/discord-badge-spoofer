@@ -25,6 +25,12 @@ telemetry events the official Discord client sends to `/api/v9/science`:
   </tr>
 </table>
 
+> [!NOTE]
+> Badges will **not** appear immediately after running the script. Discord
+> processes the telemetry with a delay, so expect the Game Time and Game
+> Variety badges to show up **24–48 hours after the script run**. Keep the
+> “Use data to personalize my Discord experience” setting enabled in Discord.
+
 This project is for educational purposes only. It violates Discord's Terms of
 Service — use at your own risk.
 

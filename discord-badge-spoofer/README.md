@@ -171,7 +171,7 @@ spoofbadge/
 
 **Will I get banned?** Possibly. Rate limits, weird telemetry patterns, or a fingerprint mismatch can all flag you. Use dry-run mode first, keep wobble on, and don't forge insane hour counts.
 
-**When do badges show up?** Playtime badge tiers update with total tracked hours; the games-played badge needs 5+ distinct titles. Give discord some time to process the events.
+**When do badges show up?** Not immediately — Discord processes telemetry with a delay, so expect badges to display **24–48 hours after the script run**. Playtime badge tiers update with total tracked hours; the games-played badge needs 5+ distinct titles.
 
 **Where's my data stored?** Everything (token, cookie, fingerprint, journal) lives locally in `vault.json` and `journal.jsonl`. Nothing is sent anywhere except to discord itself.
 
