@@ -53,8 +53,7 @@ Menu:
 3 · set fingerprint
 4 · change token
 5 · change cookie
-6 · auto-retrieve from Chrome
-7 · exit
+6 · exit
 ```
 
 ### Node.js

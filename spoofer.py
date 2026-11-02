@@ -25,11 +25,8 @@ this breaks discord tos. your account, your problem.
 from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import os
-import re
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -225,131 +222,6 @@ def generate_fingerprint(user_id: str, path: str = "", pid: int = 0) -> str:
     if not out:
         raise RuntimeError("generator produced no output")
     return out[-1]
-
-
-def _chrome_user_data_dir() -> Path:
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
-    if sys.platform == "win32":
-        return Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "User Data"
-    return Path.home() / ".config" / "google-chrome"
-
-
-def _chrome_keychain_password() -> str:
-    # macOS: chrome safe storage password
-    if sys.platform != "darwin":
-        return ""
-    try:
-        result = subprocess.run(
-            ["security", "find-generic-password", "-s", "Chrome Safe Storage", "-w"],
-            capture_output=True, text=True, timeout=15,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except Exception:
-        pass
-    return ""
-
-
-def _decrypt_chrome_value(encrypted: bytes) -> str:
-    # Chrome prefixes encrypted cookie values with b"v10"/b"v11" on macOS.
-    if not encrypted or len(encrypted) < 4:
-        return ""
-    if encrypted[:3] not in (b"v10", b"v11"):
-        try:
-            return encrypted.decode("utf-8", errors="ignore")
-        except Exception:
-            return ""
-    password = _chrome_keychain_password()
-    if not password:
-        return ""
-    key = hashlib.pbkdf2_hmac("sha1", password.encode("utf-8"), b"saltysalt", 1003, dklen=16)
-    iv = b" " * 16
-    try:
-        result = subprocess.run(
-            ["openssl", "enc", "-d", "-aes-128-cbc", "-K", key.hex(), "-iv", iv.hex()],
-            input=encrypted[3:], capture_output=True, timeout=15,
-        )
-    except Exception:
-        return ""
-    if result.returncode != 0:
-        return ""
-    raw = result.stdout
-    # strip PKCS#7 padding
-    if raw:
-        pad = raw[-1]
-        if 1 <= pad <= 16 and raw[-pad:] == bytes([pad]) * pad:
-            raw = raw[:-pad]
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return ""
-
-
-def _extract_chrome_cookie(profile: str = "Default") -> str:
-    # try browser_cookie3 first (handles decryption + keychain)
-    try:
-        import browser_cookie3  # type: ignore
-
-        cj = browser_cookie3.chrome(domain_name="discord.com")
-        for c in cj:
-            if c.name == "cf_clearance":
-                return c.value
-    except Exception:
-        pass
-
-    # fallback: read Chrome's cookie sqlite db and decrypt manually
-    base = _chrome_user_data_dir() / profile
-    candidates = [base / "Cookies", base / "Network" / "Cookies"]
-    for db_path in candidates:
-        if not db_path.exists():
-            continue
-        try:
-            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT encrypted_value FROM cookies WHERE host_key LIKE ? AND name = ?",
-                ("%discord.com%", "cf_clearance"),
-            )
-            rows = cur.fetchall()
-            conn.close()
-        except Exception:
-            continue
-        for (enc,) in rows:
-            if not enc:
-                continue
-            val = _decrypt_chrome_value(bytes(enc))
-            if val:
-                return val
-    return ""
-
-
-def _extract_chrome_token(profile: str = "Default") -> str:
-    # Discord stores the account token in Chrome's localStorage (LevelDB).
-    # Scan the leveldb files for a token-shaped string.
-    base = _chrome_user_data_dir() / profile / "Local Storage" / "leveldb"
-    if not base.exists():
-        return ""
-    token_re = re.compile(rb"[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}")
-    quoted_re = re.compile(rb'"token"\s*:\s*"([^"]+)"')
-    found: set[str] = set()
-    for path in base.iterdir():
-        if not path.is_file():
-            continue
-        try:
-            data = path.read_bytes()
-        except OSError:
-            continue
-        for m in quoted_re.finditer(data):
-            val = m.group(1).decode("latin-1")
-            if token_re.fullmatch(val.encode()) or "." in val:
-                found.add(val)
-        for m in token_re.finditer(data):
-            found.add(m.group(0).decode("latin-1"))
-    # prefer the longest plausible token
-    if not found:
-        return ""
-    return max(found, key=len)
 
 
 class Console:
@@ -937,48 +809,6 @@ class App:
         C.ok("cookie", "updated")
         time.sleep(1.5)
 
-    def _auto_retrieve_chrome(self) -> None:
-        C = self.console
-        C.rule()
-        C.warn("privacy", "this reads your local Google Chrome profile data (cookies + localStorage)")
-        C.info("nothing is sent anywhere; extraction happens entirely on this machine")
-        C.rule()
-        confirm = input(f"  {C.ORANGE}›{C.RESET} continue? [y/N] ").strip().lower()
-        if confirm not in ("y", "yes"):
-            C.info("cancelled")
-            time.sleep(1)
-            return
-
-        profile = input(f"  {C.GREY}chrome profile [Default]:{C.RESET} ").strip() or "Default"
-
-        C.info("extracting cf_clearance cookie...")
-        cookie = _extract_chrome_cookie(profile)
-        if cookie:
-            self.state.cookie = cookie
-            self.state.save()
-            C.ok("cookie", f"retrieved ({len(cookie)} chars)")
-        else:
-            C.err("cookie", "not found · is Chrome logged into discord.com? (try pip install browser-cookie3)")
-
-        C.info("extracting account token...")
-        token = _extract_chrome_token(profile)
-        if token:
-            self.state.token = token
-            self.state.analytics_token = ""
-            self.state.fetched_at = 0
-            self.state.save()
-            C.ok("token", f"retrieved ({len(token)} chars)")
-            try:
-                self._new_session()
-                ensure_token(self.state, self.session.super_props)
-                C.ok("auth", "re-minted for retrieved token")
-            except Exception as exc:
-                C.err("auth", str(exc))
-        else:
-            C.err("token", "not found · open discord.com in Chrome and log in first")
-
-        time.sleep(1.5)
-
     def _require_ready(self) -> bool:
         if not self.state.has_cookie:
             self.console.err("cookie", "not set · use option 5 to add one")
@@ -1127,8 +957,7 @@ class App:
             C.info(f"{C.ORANGE}3{C.RESET} · set fingerprint")
             C.info(f"{C.ORANGE}4{C.RESET} · change token")
             C.info(f"{C.ORANGE}5{C.RESET} · change cookie")
-            C.info(f"{C.ORANGE}6{C.RESET} · auto-retrieve from Chrome")
-            C.info(f"{C.ORANGE}7{C.RESET} · exit")
+            C.info(f"{C.ORANGE}6{C.RESET} · exit")
             C.rule()
             choice = input(f"  {C.ORANGE}›{C.RESET} ").strip()
             print()
@@ -1142,9 +971,7 @@ class App:
                 self._change_token()
             elif choice == "5":
                 self._change_cookie()
-            elif choice == "6":
-                self._auto_retrieve_chrome()
-            elif choice in ("7", ""):
+            elif choice in ("6", ""):
                 break
             else:
                 C.warn("input", "invalid option")
